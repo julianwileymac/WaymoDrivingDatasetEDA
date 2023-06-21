@@ -261,9 +261,10 @@ def project_vehicle_to_image(vehicle_pose, calibration, points):
     camera_image_metadata = list(vehicle_pose.transform) + [0.0] * 10
 
     # Perform projection and return projected image coordinates (u, v, ok).
-    return py_camera_model_ops.world_to_image(extrinsic, intrinsic, metadata,
-                                            camera_image_metadata,
-                                            world_points).numpy()
+    # return py_camera_model_ops.world_to_image(extrinsic, intrinsic, metadata,camera_image_metadata,world_points).numpy()
+    return (extrinsic, intrinsic, metadata,
+                                              camera_image_metadata,
+                                              world_points)
 def show_camera_image(camera_image, layout):
   """Display the given camera image."""
   ax = plt.subplot(*layout)
@@ -469,8 +470,7 @@ deck_card = dbc.Card(
 )
 
 def compute_pointcloud_for_image(
-    lv5,
-    sample_token: str,
+    cam_row,
     dot_size: int = 2,
     pointsensor_channel: str = "LIDAR_TOP",
     camera_channel: str = "CAM_FRONT",
@@ -486,18 +486,21 @@ def compute_pointcloud_for_image(
     Returns:
         tuple containing the points, array of colors and a pillow image
     """
-    sample_record = lv5.get("sample", sample_token)
+    # sample_record = lv5.get("sample", sample_token)
 
+    cam_image1 = v2.CameraImageComponent.from_dict(cam_row)
+    im = tf.image.decode_jpeg(cam_image1.image)
+    # plt.imshow(tf.image.decode_jpeg(cam_image1.image))
     # Here we just grab the front camera and the point sensor.
-    pointsensor_token = sample_record["data"][pointsensor_channel]
-    camera_token = sample_record["data"][camera_channel]
+    # pointsensor_token = sample_record["data"][pointsensor_channel]
+    # camera_token = sample_record["data"][camera_channel]
 
-    points, coloring, im = lv5.explorer.map_pointcloud_to_image(
-        pointsensor_token, camera_token
-    )
+    # points, coloring, im = lv5.explorer.map_pointcloud_to_image(
+    #    pointsensor_token, camera_token
+    # )
 
-    return points, coloring, im
-def render_box_in_image(camera_box, camera_image, camera_calib, sample: str, camera_channel: str):
+    return im
+def render_box_in_image(camera_image, sample: str, camera_channel: str):
     """
 
     :param lv5:
@@ -510,6 +513,7 @@ def render_box_in_image(camera_box, camera_image, camera_calib, sample: str, cam
     # data_path, boxes, camera_intrinsic = lv5.get_sample_data(
     #     camera_token, flat_vehicle_coordinates=False
     # )
+    """
     im = tf.image.decode_jpeg(camera_image.image)
     arr = np.array(im)
 
@@ -524,19 +528,24 @@ def render_box_in_image(camera_box, camera_image, camera_calib, sample: str, cam
     #     box.render_cv2(arr, normalize=True, view=camera_intrinsic, colors=(c, c, c))
 
     new = Image.fromarray(arr)
+    """
+    # im = tf.image.decode_jpeg(camera_image.image)
+    new = camera_image
     return new
 
-def build_figure(lv5, sample, lidar, camera, overlay):
-    points, coloring, im = compute_pointcloud_for_image(
-        lv5, sample["token"], pointsensor_channel=lidar, camera_channel=camera
+def build_figure(cam_row, lidar, camera, overlay):
+    im = compute_pointcloud_for_image(
+        cam_row=cam_row, pointsensor_channel=lidar, camera_channel=camera
     )
 
     if "boxes" in overlay:
-        im = render_box_in_image(lv5, im, sample, camera_channel=camera)
+        im = render_box_in_image(camera_image=im,sample='test', camera_channel=camera)
 
     fig = px.imshow(im, binary_format="jpeg", binary_compression_level=2)
 
     if "pointcloud" in overlay:
+        pass
+        """
         fig.add_trace(
             go.Scattergl(
                 x=points[0,],
@@ -547,6 +556,7 @@ def build_figure(lv5, sample, lidar, camera, overlay):
                 marker_size=3,
             )
         )
+        """
 
     fig.update_layout(
         margin=dict(l=10, r=10, t=0, b=0),
@@ -702,6 +712,16 @@ def update_graphs(progression, camera, lidar, overlay, view_mode):
     # lidar, lidar_box, lidar_pose, lidar_calibration, lidar_camera_projection, lidar_camera_synced_box, lidar_hkp, \
     #    projected_lidar_box, stats, lidar_segmentation, vehicle_pose = load_lidar(token)
     full_lidar_df, lidar_it = load_lidar_df(token)
+    _, li_row = next(lidar_it)
+    lidar_pc = v2.LiDARComponent.from_dict(li_row)
+    lidar_box1 = v2.LiDARBoxComponent.from_dict(li_row)
+    lidar_calibration = v2.LiDARCalibrationComponent.from_dict(li_row)
+    lidar_pose = v2.LiDARPoseComponent.from_dict(li_row)
+    vehicle_pose = v2.VehiclePoseComponent.from_dict(li_row)
+    pc = lf.convert_range_image_to_point_cloud(lidar.range_image_return1, lidar_calibration,
+                                               lidar_pose.range_image_return1, vehicle_pose, False)
+    pc_df = pd.DataFrame(pc, columns=["x", "y", "z"])
+
     full_lidar_df = (
         full_lidar_df.groupby(['key.segment_context_name', 'key.frame_timestamp_micros', 'key.laser_name'])
         .agg(list)
@@ -728,9 +748,7 @@ def update_graphs(progression, camera, lidar, overlay, view_mode):
     lidar_pose = v2.LiDARPoseComponent.from_dict(li_row)
     vehicle_pose = v2.VehiclePoseComponent.from_dict(li_row)
 
-    pc = lf.convert_range_image_to_point_cloud(lidar.range_image_return1, lidar_calibration, lidar_pose.range_image_return1,
-                                          vehicle_pose, False)
-    # pc_df = pd.DataFrame(pc.points.T, columns=["x", "y", "z", "intensity"])
+
 
     # if lidar in ["LIDAR_FRONT_LEFT", "LIDAR_FRONT_RIGHT"]:
     #     pc_df.z = -pc_df.z + 1
@@ -776,23 +794,25 @@ def update_graphs(progression, camera, lidar, overlay, view_mode):
                 lidar_box1.box.heading)):
             box_list.append([x,y,z,size_x,size_y,size_z,heading])
 
+    np_box_list = np.asarray(box_list)
+
     polygon_data = [
         {
             "name": box,
             "polygon": corners[i,:4,:],
-            "width": box.wlh[0],
-            "length": box.wlh[1],
-            "elevation": box.wlh[2],
-            "color": NAME2COLOR[box.name],
-            "token": box.token,
-            "distance": np.sqrt(np.square(boxes[0].center).sum()),
+            "width": box_list[i, 3],
+            "length": box_list[i, 4],
+            "elevation": box_list[i,5],
+            "color": NAME2COLOR[box],
+            "token": token,
+            "distance": np.sqrt(np.square(np_box_list[i,:3]).sum()),
         }
 
         for i, box in enumerate(lidar_box1.key.laser_object_id)
     ]
         # for box in enumerate(corners)
     # Build figure and pydeck object
-    fig = build_figure(lv5, sample, lidar, camera, overlay)
+    fig = build_figure(cam_row=cam_row, lidar=LIDARS[0], camera=CAMERAS[0], overlay='boxes')
     r = build_deck(view_mode, pc_df, polygon_data)
 
     return fig, r.to_json(), dash.no_update, dash.no_update
