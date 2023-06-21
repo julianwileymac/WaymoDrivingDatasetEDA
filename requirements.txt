@@ -2,3 +2,12 @@ waymo-open-dataset-tf-2-11-0==1.5.2
 jupyter-dash
 dask
 tensorflow
+dash
+plotly
+pydeck
+numpy
+pandas
+python-dotenv
+dash-deck
+colorlover
+open3d
